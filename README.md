@@ -61,7 +61,8 @@ And with Clojure:
     (:message)
     (:content)
     (first)
-    (:output-text))
+    (:output-text)
+    (:text))
 ```
 
 Or image generation:
