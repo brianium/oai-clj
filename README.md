@@ -1,5 +1,7 @@
 # oai-clj
 
+[![Clojars Project](https://img.shields.io/clojars/v/com.github.brianium/oai-clj.svg)](https://clojars.org/com.github.brianium/oai-clj)
+
 A no frills Clojure library on top of [openai-java](https://github.com/openai/openai-java)
 
 ## Goals
