@@ -165,28 +165,64 @@
             (ArrayList.)
             entries)))
 
+(defn ->java-json
+  "Recursively turn a Clojure data structure into the Java‑friendly
+   shape that JsonValue.from can digest:
+
+   • keyword keys ⇒ strings
+   • keyword values ⇒ strings
+   • Clojure maps ⇒ java.util.HashMap
+   • Clojure vectors / lists / sets ⇒ java.util.ArrayList
+  "
+  [x]
+  (cond
+    (keyword? x) (name x)
+
+    (map? x)
+    (let [m (java.util.HashMap.)]
+      (doseq [[k v] x]
+        (.put m (name k) (->java-json v)))
+      m)
+
+    (coll? x)
+    (let [l (java.util.ArrayList.)]
+      (doseq [v x] (.add l (->java-json v)))
+      l)
+
+    :else x))
+
+(defn schema->openai-schema ^ResponseFormatTextJsonSchemaConfig$Schema
+  [schema-map]
+  (let [builder (ResponseFormatTextJsonSchemaConfig$Schema/builder)]
+    (.putAdditionalProperty builder "additionalProperties" (JsonValue/from false))
+    (doseq [[k v] schema-map]
+      (.putAdditionalProperty builder k (JsonValue/from v)))
+    (.build builder)))
+
+
 (defn response-text-config
-  "Convert a malli schema to a response text config containing a format for structured outputs. If given a single var,
-   the format name will be inferred from the var name. Otherwise a schema and name can be explicitly
-   provided."
-  ([v]
-   (let [s @(resolve v)
-         n (name v)]
-     (response-text-config s n)))
-  ([s format-name]
-   (let [schema (mj/transform s)
-         config-schema (-> (ResponseFormatTextJsonSchemaConfig$Schema/builder)
-                           (.putAdditionalProperty "type" (JsonValue/from (:type schema)))
-                           (.putAdditionalProperty "properties" (JsonValue/from (walk/stringify-keys (:properties schema))))
-                           (.putAdditionalProperty "required" (JsonValue/from (mapv (comp JsonValue/from name) (:required schema))))
-                           (.putAdditionalProperty "additionalProperties" (JsonValue/from false))
-                           (.build))
-         format (-> (ResponseFormatTextJsonSchemaConfig/builder)
-                    (.name format-name)
-                    (.type (JsonValue/from "json_schema"))
-                    (.schema config-schema)
-                    (.strict true)
-                    (.build))]
+  "Return a ResponseTextConfig that uses the given Malli schema as a
+   structured‑output format.  Accepts either
+
+     (response-text-config ::my.ns/SomeSchema)
+   or
+     (response-text-config some-malli-schema \"my-format\")
+
+   When you pass a single var, its *name* becomes the format name."
+  ([schema-var]
+   (let [s @(resolve schema-var)]
+     (response-text-config s (name schema-var))))
+
+  ([malli-schema format-name]
+   (let [json-schema     (mj/transform malli-schema)        ; Malli → JSON‑schema map
+         schema-java     (->java-json json-schema)          ; keyword → string, etc.
+         openai-schema   (schema->openai-schema schema-java)
+         format          (-> (ResponseFormatTextJsonSchemaConfig/builder)
+                             (.name format-name)
+                             (.type (JsonValue/from "json_schema"))
+                             (.schema openai-schema)
+                             (.strict true)
+                             (.build))]
      (-> (ResponseTextConfig/builder)
          (.format format)
          (.build)))))
