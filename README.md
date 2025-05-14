@@ -60,6 +60,7 @@ And with Clojure:
     (first)
     (:message)
     (:content)
+    (first)
     (:output-text))
 ```
 
