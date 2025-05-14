@@ -4,6 +4,7 @@
             [clojure.set :as set]
             [clojure.walk :as walk]
             [malli.json-schema :as mj]
+            [malli.util :as mu]
             [oai-clj.http :as http]
             [oai-clj.util :refer [defbuilder optional]])
   (:import (java.net URL URLConnection)
@@ -191,10 +192,17 @@
 
     :else x))
 
+(defn malli->json-schema
+  "Malli schema  ➜  JSON‑Schema map with additionalProperties=false on
+   every :map (object) level."
+  [mal-schema]
+  (-> mal-schema
+      mu/closed-schema   ; <- adds {:closed true} to every nested :map
+      mj/transform))
+
 (defn schema->openai-schema ^ResponseFormatTextJsonSchemaConfig$Schema
   [schema-map]
   (let [builder (ResponseFormatTextJsonSchemaConfig$Schema/builder)]
-    (.putAdditionalProperty builder "additionalProperties" (JsonValue/from false))
     (doseq [[k v] schema-map]
       (.putAdditionalProperty builder k (JsonValue/from v)))
     (.build builder)))
@@ -214,7 +222,7 @@
      (response-text-config s (name schema-var))))
 
   ([malli-schema format-name]
-   (let [json-schema     (mj/transform malli-schema)        ; Malli → JSON‑schema map
+   (let [json-schema     (malli->json-schema malli-schema)        ; Malli → JSON‑schema map
          schema-java     (->java-json json-schema)          ; keyword → string, etc.
          openai-schema   (schema->openai-schema schema-java)
          format          (-> (ResponseFormatTextJsonSchemaConfig/builder)
