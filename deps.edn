@@ -1,8 +1,7 @@
 {:paths   ["src"]
- :deps    {cheshire/cheshire                 {:mvn/version "6.0.0"}
-           com.openai/openai-java            {:mvn/version "1.6.1"}
-           metosin/malli                     {:mvn/version "0.17.0"}
-           org.clojure/clojure               {:mvn/version "1.12.0"}}
+ :deps    {com.openai/openai-java {:mvn/version "1.6.1"}
+           metosin/malli          {:mvn/version "0.17.0"}
+           org.clojure/clojure    {:mvn/version "1.12.0"}}
  :aliases {:dev {:extra-paths ["dev" "resources"]
                  :extra-deps  {org.clojure/tools.namespace {:mvn/version "1.5.0"}}}
            :slim {:deps
@@ -10,7 +9,7 @@
                    slipset/deps-deploy {:mvn/version "0.2.2"}}
                   :ns-default slim.lib
                   :exec-args {:lib         com.github.brianium/oai-clj
-                              :version     "1.6.1.3"
+                              :version     "1.6.1.4"
                               :url         "https://github.com/brianium/oai-clj"
                               :description "Just a little Clojure sugar on top of openai-java"
                               :developer   "Brian Scaturro"}}}}
