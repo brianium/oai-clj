@@ -15,7 +15,7 @@
            (com.openai.core JsonValue)
            (com.openai.core.http AsyncStreamResponse$Handler)
            (com.openai.models ChatModel)
-           (com.openai.models.responses EasyInputMessage EasyInputMessage$Role ResponseCreateParams Response ResponseFormatTextJsonSchemaConfig ResponseFormatTextJsonSchemaConfig$Schema ResponseTextConfig ResponseInputItem$Message ResponseInputItem$Message$Role ResponseInputImage ResponseInputImage$Detail ResponseInputText ResponseInputContent ResponseInputFile ResponseCreateParams$Metadata Response$IncompleteDetails$Reason ResponseOutputMessage$Status ResponseStatus)))
+           (com.openai.models.responses EasyInputMessage EasyInputMessage$Role ResponseCreateParams Response ResponseFormatTextJsonSchemaConfig ResponseFormatTextJsonSchemaConfig$Schema ResponseTextConfig ResponseInputItem ResponseInputItem$Message ResponseInputItem$Message$Role ResponseInputImage ResponseInputImage$Detail ResponseInputText ResponseInputContent ResponseInputFile ResponseCreateParams$Metadata Response$IncompleteDetails$Reason ResponseOutputMessage$Status ResponseStatus ResponseOutputMessage ResponseOutputMessage$Content ResponseOutputText ResponseOutputText$Annotation ResponseOutputText$Annotation$FileCitation ResponseOutputText$Annotation$UrlCitation ResponseOutputText$Annotation$FilePath ResponseOutputRefusal)))
 
 (def easy-input-roles
   {:user      EasyInputMessage$Role/USER
@@ -47,6 +47,8 @@
   {ResponseOutputMessage$Status/IN_PROGRESS :in-progress
    ResponseOutputMessage$Status/COMPLETED :completed
    ResponseOutputMessage$Status/INCOMPLETE :incomplete})
+
+(def message-status' (set/map-invert message-status))
 
 (def response-status
   {ResponseStatus/COMPLETED :completed
@@ -129,6 +131,52 @@
   (ResponseInputFile/builder)
   {:filename "filename" :file-data ["fileData" with-url-support]})
 
+(defbuilder file-citation
+  (ResponseOutputText$Annotation$FileCitation/builder)
+  {:file-id "fileId" :index "index"})
+
+(defbuilder file-path
+  (ResponseOutputText$Annotation$FilePath/builder)
+  {:file-id "fileId" :index "index"})
+
+(defbuilder url-citation
+  (ResponseOutputText$Annotation$UrlCitation/builder)
+  {:end-index "endIndex" :start-index "startIndex" :title "title" :url "url"})
+
+(defn output-annotations
+  [v]
+  (let [a (ArrayList.)]
+    (doseq [an v]
+      (when-some [fc (:file-citation an)]
+        (.add a (ResponseOutputText$Annotation/ofFileCitation (file-citation fc))))
+      (when-some [uc (:url-citation an)]
+        (.add a (ResponseOutputText$Annotation/ofUrlCitation (url-citation uc))))
+      (when-some [fp (:file-path an)]
+        (.add a (ResponseOutputText$Annotation/ofFilePath (file-path fp)))))
+    a))
+
+(defbuilder response-output-text
+  (ResponseOutputText/builder)
+  {:annotations ["annotations" output-annotations] :text "text"})
+
+(defbuilder response-output-refusal
+  (ResponseOutputRefusal/builder)
+  {:refusal "refusal"})
+
+(defn output-message-content
+  [v]
+  (let [c (ArrayList.)]
+    (doseq [{:keys [output-text refusal]} v]
+      (when (some? output-text)
+        (.add c (ResponseOutputMessage$Content/ofOutputText (response-output-text output-text))))
+      (when (some? refusal)
+        (.add c (ResponseOutputMessage$Content/ofRefusal (response-output-refusal refusal)))))
+    c))
+
+(defbuilder response-output-message
+  (ResponseOutputMessage/builder)
+  {:id "id" :content ["content" output-message-content] :status ["status" message-status']})
+
 (defn response-input-items
   "Convert a vector into a valid builder call to inputOfResponse.
 
@@ -139,12 +187,18 @@
                           {:type :file :filename \"notes.pdf\" :file-data (io/resource \"notes.pdf\")]}]
   ```"
   [entries]
-  (letfn [(response-input-content [{:keys [type text detail image-url filename file-data]}]
+  (letfn [(content-entry? [m]
+            (and (contains? m :role) (= :user (:role m)) (not (string? (:content m)))))
+          (easy-input-entry? [m]
+            (and (contains? m :role) (string? (:content m))))
+          (output-message? [m]
+            (and (contains? m :id) (contains? m :content) (contains? m :status)))
+          (response-input-content [{:keys [type text detail image-url filename file-data]}]
             (condp = type
-              :image (ResponseInputContent/ofInputImage (response-input-image {:detail detail :image-url image-url}))
-              :file  (ResponseInputContent/ofInputFile (response-input-file {:filename filename :file-data file-data}))
+              :image              (ResponseInputContent/ofInputImage (response-input-image {:detail detail :image-url image-url}))
+              :file               (ResponseInputContent/ofInputFile (response-input-file {:filename filename :file-data file-data}))
               (ResponseInputContent/ofInputText (response-input-text {:text text}))))
-          (input-item [{:keys [role content]}]
+          (content-input-item [{:keys [role content]}]
             (let [flattened (if (sequential? content) content [content])
                   c         (ArrayList.)]
               (loop [remaining flattened]
@@ -159,9 +213,16 @@
                       (map? co)    (do
                                      (.add c (response-input-content co))
                                      (recur rest))
-                      :else        (recur (concat rest (seq co)))))))))]
+                      :else        (recur (concat rest (seq co)))))))))
+          (input-item [entry]
+            (cond
+              (easy-input-entry? entry) (ResponseInputItem/ofEasyInputMessage (easy-input-message entry))
+              (output-message? entry)   (ResponseInputItem/ofResponseOutputMessage (response-output-message entry))
+              :else (throw (ex-info "Invalid input item" entry))))]
     (reduce (fn [items entry]
-              (.add items (input-item entry))
+              (cond
+                (content-entry? entry) (.add items (content-input-item entry))
+                :else (.add items (input-item entry)))
               items)
             (ArrayList.)
             entries)))

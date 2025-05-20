@@ -4,10 +4,10 @@
             [oai-clj.core :as oai]))
 
 (defn start []
-  (println "Anything to start?"))
+  (println "oai-clj start"))
 
 (defn stop []
-  (println "Anything to stop?"))
+  (println "oai-clj stop"))
 
 (defn refresh []
   (repl/refresh :after 'dev/start))
@@ -58,6 +58,33 @@
      :input-items [{:role :user :content ["Describe this file."
                                           {:type :file :filename "dummy.pdf" :file-data (io/resource "dummy.pdf")}]}]))
 
+  ;;; Input items aims to support all the ResponseInputItem/of* varieties. This is equivalent to the explicit :easy-input-messages
+  (def response
+    (oai/create-response
+     :input-items [{:role :system :content "Given 2 numbers, you add them together"}
+                   {:role :user :content "3 and 4 babbyyyyyy"}]))
+
+  ;;; Mixing and matching is much easier with :input-items
+  (def response
+    (oai/create-response
+     :input-items [{:role :system :content "You are an art critic specializing in cartoon turtles"}
+                   {:role :user :content "I am going to show you some art. Be honest. Before you give your review, start with \"Here we go again.\""}
+                   {:role :assistant :content "Understood"}
+                   {:role :user :content ["Give it to me straight, what do you think of this?"
+                                          {:type :image :detail :auto :image-url (io/resource "turt.png")}]}]))
+
+  ;;; Response conversation example from openai-java
+  (let [*context     (atom [{:role :user :content "Tell me a story about building the best SDK!"}])
+        append       (fn [v x]
+                       (into x v))
+        with-outputs (fn [items response]
+                       (reduce #(conj %1 (:message %2)) items (:output response)))]
+    (dotimes [i 4]
+      (->> (swap! *context with-outputs (oai/create-response :input-items @*context))
+           (append [{:role :user :content (format "But why?%s" (reduce str "" (repeat i "?")))}])
+           (reset! *context)))
+    @*context)
+
   ;;; Async, callback driven responses - no Clojure map support yet all events are the raw Java type
   (oai/create-response-stream
    (fn [event]
@@ -105,8 +132,6 @@
   (def transcribe-response
     (oai/transcribe :file (io/resource "test.wav")))
 
-  (refresh)
-
-  )
+  (refresh))
 
 
