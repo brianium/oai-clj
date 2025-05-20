@@ -151,7 +151,7 @@ The same is true for Java result types.
 
 Some "extra" keys are provided (mostly in the responses api) to make things a little easier for Clojurists. Look at the examples of using `create-response` with `:input-items` and `:easy-input-items`.
 
-See [dev.clj]("dev/dev.clj") for examples.
+See [dev.clj](dev/dev.clj) for examples.
 
 ## Customizing clients
 
