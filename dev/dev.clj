@@ -91,13 +91,16 @@
     [:map
      [:schema {:description "A valid json schema, fit for use in Open AI's structured output responses. Must be immediatley parsable"} :string]])
 
+  ;;; I got this to work well a handful of times. This is just meant to demonstrate a usecase, real usage would likely have some retry to correct the llm. I saw most errors
+  ;;; in producing parseable json and following OpenAI's subset rules for json schema. All solvable, but here is not the place dear friends
   (let [proompt (-> "I need a json schema that is adept at creating consistent image outputs. Clients will use this schema to generate documents with different subjects and text "
                     (str "while preserving overall thematic and stylistic elements. ")
                     (str "The schema must be comprehensive enough to support placing multiple subjects in various positions relative to the rest of the scene. ")
                     (str "The schema should support global text as well as text local to each subject (such as a label above, below, to the left of, etc the subject. ")
                     (str "Use the Structured Output documentation you are given to ensure a correct response. ")
                     (str "No wrapping elements. I want json that I can plug right into an open ai request. ")
-                    (str "Note that all objects, no matter the depth in a schema, most speficy all fields as required."))
+                    (str "Note that all objects, no matter the depth in a schema, most speficy all fields as required.")
+                    (str "Similarly, all object types must include additionalProperties: false - this is a requirement of open ai's structured outputs"))
         meta-response (oai/create-response :input-items [{:role :user :content [{:type :file :filename "structuredoutputs.pdf" :file-data (io/resource "structuredoutputs.pdf")}
                                                                                 proompt]}]
                                            :format [MetaSchema "meta"])
