@@ -187,7 +187,7 @@
   ```"
   [entries]
   (letfn [(content-entry? [m]
-            (and (contains? m :role) (= :user (:role m)) (not (string? (:content m)))))
+            (and (contains? m :role) (not= :assistant (:role m)) (not (string? (:content m)))))
           (easy-input-entry? [m]
             (and (contains? m :role) (string? (:content m))))
           (output-message? [m]
