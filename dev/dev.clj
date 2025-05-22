@@ -68,7 +68,7 @@
   ;;; Mixing and matching is much easier with :input-items
   (def response
     (oai/create-response
-     :input-items [{:role :system :content "You are an art critic specializing in cartoon turtles"}
+     :input-items [{:role :system :content ["You are an art critic specializing in cartoon turtles"]}
                    {:role :user :content "I am going to show you some art. Be honest. Before you give your review, start with \"Here we go again.\""}
                    {:role :assistant :content "Understood"}
                    {:role :user :content ["Give it to me straight, what do you think of this?"
