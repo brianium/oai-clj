@@ -140,7 +140,10 @@ Define a schema in Malli and reference it by Var or a tuple. `:format` is a non-
    :format [SumResult "CoolFormat"]))
 ```
 
-Hoping to apply the same support to tool use when that gets implemented
+Note:
+In addition to Malli schemas, plain Clojure maps are also supported for structured outputs. This is particularly useful when the schema is not known ahead of time - such as when a different LLM is generating the schema.
+
+Hoping to apply the same support to tool use when that gets implemented.
 
 ## General guidelines
 
