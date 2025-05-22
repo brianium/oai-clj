@@ -2,7 +2,6 @@
   "Mirrors com.openai.models.responses in openai-java"
   (:require [clojure.java.io :as io]
             [clojure.set :as set]
-            [clojure.walk :as walk]
             [malli.json-schema :as mj]
             [malli.util :as mu]
             [oai-clj.http :as http]
@@ -268,23 +267,19 @@
       (.putAdditionalProperty builder k (JsonValue/from v)))
     (.build builder)))
 
-
 (defn response-text-config
-  "Return a ResponseTextConfig that uses the given Malli schema as a
-   structured‑output format.  Accepts either
+  "Return a ResponseTextConfig that uses the given schema as a
+   structured‑output format.  Accepts either Malli (vector) schemas or maps.
 
-     (response-text-config ::my.ns/SomeSchema)
-   or
-     (response-text-config some-malli-schema \"my-format\")
-
+   (response-text-config 'SomeSchema) or (response-text-config some-malli-schema \"my-format\")
    When you pass a single var, its *name* becomes the format name."
   ([schema-var]
    (let [s @(resolve schema-var)]
      (response-text-config s (name schema-var))))
 
-  ([malli-schema format-name]
-   (let [json-schema     (malli->json-schema malli-schema)        ; Malli → JSON‑schema map
-         schema-java     (->java-json json-schema)          ; keyword → string, etc.
+  ([schema format-name]
+   (let [json-schema     (if (map? schema) schema (malli->json-schema schema)) ;;; supports map based and malli based schemas
+         schema-java     (->java-json json-schema) ; keyword → string, etc.
          openai-schema   (schema->openai-schema schema-java)
          format          (-> (ResponseFormatTextJsonSchemaConfig/builder)
                              (.name format-name)
