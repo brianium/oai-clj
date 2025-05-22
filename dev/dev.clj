@@ -1,7 +1,8 @@
 (ns dev
   (:require [clojure.tools.namespace.repl :as repl]
             [clojure.java.io :as io]
-            [oai-clj.core :as oai]))
+            [oai-clj.core :as oai]
+            [cheshire.core :as json]))
 
 (defn start []
   (println "oai-clj start"))
@@ -84,6 +85,29 @@
            (append [{:role :user :content (format "But why?%s" (reduce str "" (repeat i "?")))}])
            (reset! *context)))
     @*context)
+
+  ;;; Schemas can be maps as well, useful for meta programming
+  (def MetaSchema
+    [:map
+     [:schema {:description "A valid json schema, fit for use in Open AI's structured output responses. Must be immediatley parsable"} :string]])
+
+  (let [proompt (-> "I need a json schema that is adept at creating consistent image outputs. Clients will use this schema to generate documents with different subjects and text "
+                    (str "while preserving overall thematic and stylistic elements. ")
+                    (str "The schema must be comprehensive enough to support placing multiple subjects in various positions relative to the rest of the scene. ")
+                    (str "The schema should support global text as well as text local to each subject (such as a label above, below, to the left of, etc the subject. ")
+                    (str "Use the Structured Output documentation you are given to ensure a correct response. ")
+                    (str "No wrapping elements. I want json that I can plug right into an open ai request. ")
+                    (str "Note that all objects, no matter the depth in a schema, most speficy all fields as required."))
+        meta-response (oai/create-response :input-items [{:role :user :content [{:type :file :filename "structuredoutputs.pdf" :file-data (io/resource "structuredoutputs.pdf")}
+                                                                                proompt]}]
+                                           :format [MetaSchema "meta"])
+        parse    #(json/parse-string % keyword)
+        schema   (->> (:output meta-response) (map :message) (mapcat :content) (map :output-text) (map :text) first parse :schema parse)]
+    (def last-meta-response meta-response)
+    (def last-schema schema)
+    (def response
+      (oai/create-response :input "Create a structured document that depicts a surreal tavern scene in the style of Salvador Dalí. Add whatever subjects seem appropriate to fit the style"
+                           :format [schema "image"])))
 
   ;;; Async, callback driven responses - no Clojure map support yet all events are the raw Java type
   (oai/create-response-stream
