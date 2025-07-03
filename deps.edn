@@ -10,7 +10,8 @@
                    slipset/deps-deploy {:mvn/version "0.2.2"}}
                   :ns-default slim.lib
                   :exec-args {:lib         com.github.brianium/oai-clj
-                              :version     "2.12.0.0"
+                              :version     "2.12.0.1"
                               :url         "https://github.com/brianium/oai-clj"
+                              :src-dirs    ["src"]
                               :description "Just a little Clojure sugar on top of openai-java"
                               :developer   "Brian Scaturro"}}}}
