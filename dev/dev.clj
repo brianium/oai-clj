@@ -24,6 +24,7 @@
 
 (comment
 ;;; :easy-input-messages are the OG - string content and :role as one of [:user :assistant :system]
+
   (def response
     (oai/create-response
      :easy-input-messages [{:role :system :content "Given 2 numbers, you add them together"}
@@ -89,7 +90,7 @@
                        (into x v))
         with-outputs (fn [items response]
                        (reduce #(conj %1 (:message %2)) items (:output response)))]
-    (dotimes [i 4]
+    (dotimes [i 4]1
       (->> (swap! *context with-outputs (oai/create-response :input-items @*context))
            (append [{:role :user :content (format "But why?%s" (reduce str "" (repeat i "?")))}])
            (reset! *context)))
@@ -146,7 +147,7 @@
 
   ;;; Get image generation tool call result from response
   (def b64-string (get-in response [:output 0 :image-generation-call :result]))
-  
+
   #_(write-base64-image-to-file b64-string "resources/dog.png")
 
   ;;; Raw responses here too

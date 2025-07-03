@@ -14,7 +14,7 @@
            (com.openai.core JsonValue)
            (com.openai.core.http AsyncStreamResponse$Handler)
            (com.openai.models ChatModel)
-           (com.openai.models.responses EasyInputMessage EasyInputMessage$Role ResponseCreateParams Response ResponseFormatTextJsonSchemaConfig ResponseFormatTextJsonSchemaConfig$Schema ResponseTextConfig ResponseInputItem ResponseInputItem$Message ResponseInputItem$Message$Role ResponseInputImage ResponseInputImage$Detail ResponseInputText ResponseInputContent ResponseInputFile ResponseCreateParams$Metadata Response$IncompleteDetails$Reason ResponseOutputMessage$Status ResponseStatus ResponseOutputMessage ResponseOutputMessage$Content ResponseOutputText ResponseOutputText$Annotation ResponseOutputText$Annotation$FileCitation ResponseOutputText$Annotation$UrlCitation ResponseOutputText$Annotation$FilePath ResponseOutputRefusal Tool Tool$ImageGeneration Tool$ImageGeneration$Background Tool$ImageGeneration$InputImageMask Tool$ImageGeneration$Model Tool$ImageGeneration$Moderation Tool$ImageGeneration$OutputFormat Tool$ImageGeneration$Quality Tool$ImageGeneration$Size ResponseOutputItem$ImageGenerationCall$Status)))
+           (com.openai.models.responses EasyInputMessage EasyInputMessage$Role ResponseCreateParams Response ResponseFormatTextJsonSchemaConfig ResponseFormatTextJsonSchemaConfig$Schema ResponseTextConfig ResponseInputItem ResponseInputItem$Message ResponseInputItem$Message$Role ResponseInputImage ResponseInputImage$Detail ResponseInputText ResponseInputContent ResponseInputFile ResponseCreateParams$Metadata Response$IncompleteDetails$Reason ResponseOutputMessage$Status ResponseStatus ResponseOutputMessage ResponseOutputMessage$Content ResponseOutputText ResponseOutputText$Annotation ResponseOutputText$Annotation$FileCitation ResponseOutputText$Annotation$UrlCitation ResponseOutputText$Annotation$FilePath ResponseOutputRefusal Tool Tool$ImageGeneration Tool$ImageGeneration$Background Tool$ImageGeneration$InputImageMask Tool$ImageGeneration$Model Tool$ImageGeneration$Moderation Tool$ImageGeneration$OutputFormat Tool$ImageGeneration$Quality Tool$ImageGeneration$Size ResponseOutputItem$ImageGenerationCall$Status ResponseStreamEvent ResponseTextDeltaEvent ResponseCreatedEvent ResponseInProgressEvent ResponseOutputItemAddedEvent ResponseContentPartAddedEvent ResponseTextDoneEvent ResponseContentPartDoneEvent ResponseOutputItemDoneEvent ResponseCompletedEvent)))
 
 (def easy-input-roles
   {:user      EasyInputMessage$Role/USER
@@ -408,6 +408,11 @@
    ResponseOutputItem$ImageGenerationCall$Status/GENERATING :generating
    ResponseOutputItem$ImageGenerationCall$Status/FAILED :failed})
 
+(defn output-text->map
+  [^ResponseOutputText ot]
+  {:annotations (mapv annotation->map (.annotations ot))
+   :text        (.text ot)})
+
 (defn output->map
   [o]
   {:message (when-some [msg (optional (.message o))]
@@ -415,8 +420,7 @@
                :content (when-some [content (.content msg)]
                           (mapv (fn [c]
                                   {:output-text (when-some [ot (optional (.outputText c))]
-                                                  {:annotations (mapv annotation->map (.annotations ot))
-                                                   :text        (.text ot)})
+                                                  (output-text->map ot))
                                    :refusal     (when-some [rf (optional (.refusal c))]
                                                   (.refusal rf))}) content))
                :status (message-status (.status msg))})
@@ -503,6 +507,100 @@
         (cond->
          (not raw?) (response->map)))))
 
+
+;;; Async responses
+
+(defn response-content-part-added-event
+  [^ResponseContentPartAddedEvent e]
+  (let [party (.part e)] ;;; 🎉
+    {:type :content-part-added
+     :content-index (.contentIndex e)
+     :output-index (.outputIndex e)
+     :part {:output-text (when-some [ot (optional (.outputText party))]
+                           (output-text->map ot))
+            :refusal     (when-some [rf (optional (.refusal party))]
+                           (.refusal rf))}}))
+
+(defn response-content-part-done-event
+  [^ResponseContentPartDoneEvent e]
+  (let [party (.part e)]
+    {:type :content-part-done
+     :content-index (.contentIndex e)
+     :item-id (.itemId e)
+     :output-index (.outputIndex e)
+     :part {:output-text (when-some [ot (optional (.outputText party))]
+                           (output-text->map ot))
+            :refusal     (when-some [rf (optional (.refusal party))]
+                           (.refusal rf))}}))
+
+(defn response-completed-event
+  [^ResponseCompletedEvent e]
+  {:type :completed
+   :response (response->map (.response e))
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-created-event
+  [^ResponseCreatedEvent e]
+  {:type :created
+   :sequence-number (.sequenceNumber e)
+   :response (response->map (.response e))})
+
+(defn response-in-progress-event
+  [^ResponseInProgressEvent e]
+  {:type     :in-progress
+   :sequence-number (.sequenceNumber e)
+   :response (response->map (.response e))})
+
+(defn response-output-item-added-event
+  [^ResponseOutputItemAddedEvent e]
+  {:type :output-item-added
+   :item (output->map (.item e))
+   :output-index (.outputIndex e)
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-output-item-done-event
+  [^ResponseOutputItemDoneEvent e]
+  {:type :output-item-done
+   :item (output->map (.item e))
+   :output-index (.outputIndex e)
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-text-delta-event
+  [^ResponseTextDeltaEvent e]
+  {:type            :output-text-delta
+   :context-index   (.contentIndex e)
+   :delta           (.delta e)
+   :item-id         (.itemId e)
+   :output-index    (.outputIndex e)
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-text-done-event
+  [^ResponseTextDoneEvent e]
+  {:type :output-text-done
+   :context-index (.contentIndex e)
+   :item-id (.itemId e)
+   :output-index (.outputIndex e)
+   :sequence-number (.sequenceNumber e)
+   :text (.text e)})
+
+(defn response-stream-event->map
+  [^ResponseStreamEvent e]
+  (try
+    (cond
+      (.isContentPartAdded e) (response-content-part-added-event (.asContentPartAdded e))
+      (.isContentPartDone e) (response-content-part-done-event (.asContentPartDone e))
+      (.isCompleted e) (response-completed-event (.asCompleted e))
+      (.isCreated e) (response-created-event (.asCreated e))
+      (.isInProgress e) (response-in-progress-event (.asInProgress e))
+      (.isOutputItemAdded e) (response-output-item-added-event (.asOutputItemAdded e))
+      (.isOutputItemDone e) (response-output-item-done-event (.asOutputItemDone e))
+      (.isOutputTextDelta e) (response-text-delta-event (.asOutputTextDelta e))
+      (.isOutputTextDone e) (response-text-done-event (.asOutputTextDone e))
+      :else e)
+    (catch Exception ex
+      {:type :error
+       :message (.getMessage ex)})))
+
 (defn create-response-stream
   "Nearly identical to create-response except it uses the async client. The first argument
   is a function that will receive events as they become available. All other options are the same
@@ -511,18 +609,20 @@
   Additional options:
   :on-complete - (optional) - Called when the underlying future completes
   :on-error   - (optional)  - Called with any exceptions generated in the underlying future"
-  [on-event & {:keys [on-complete on-error] :as m}]
+  [on-event & {:keys [on-complete on-error raw?] :as m}]
   (let [client  (http/get-client-async)
         params  (response-create-params' m)
         handler (.createStreaming (.responses client) params)
         _       (.subscribe handler
                             (reify AsyncStreamResponse$Handler
                               (onNext [_ event]
-                                (on-event event))))
+                                (on-event (if raw?
+                                            event
+                                            (response-stream-event->map event))))))
         fut     (.onCompleteFuture handler)]
     (when (fn? on-complete)
       (.thenRun fut ^Runnable on-complete))
     (when on-error
       (.exceptionally fut
-       (reify Function
-         (apply [_ ex] (do (on-error ex) nil)))))))
+                      (reify Function
+                        (apply [_ ex] (do (on-error ex) nil)))))))
