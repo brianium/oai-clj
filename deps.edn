@@ -6,7 +6,7 @@
                  :extra-deps  {org.clojure/tools.namespace {:mvn/version "1.5.0"}
                                cheshire/cheshire {:mvn/version "6.0.0"}}}
            :slim {:deps
-                  {io.github.abogoyavlensky/slim {:mvn/version "LATEST"}
+                  {io.github.abogoyavlensky/slim {:mvn/version "0.3.2"}
                    slipset/deps-deploy {:mvn/version "0.2.2"}}
                   :ns-default slim.lib
                   :exec-args {:lib         com.github.brianium/oai-clj

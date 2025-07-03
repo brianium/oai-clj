@@ -11,3 +11,5 @@
 .aider*
 target/
 test.wav
+resources/*.png
+!resources/turt.png
