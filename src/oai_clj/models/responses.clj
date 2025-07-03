@@ -14,7 +14,7 @@
            (com.openai.core JsonValue)
            (com.openai.core.http AsyncStreamResponse$Handler)
            (com.openai.models ChatModel)
-           (com.openai.models.responses EasyInputMessage EasyInputMessage$Role ResponseCreateParams Response ResponseFormatTextJsonSchemaConfig ResponseFormatTextJsonSchemaConfig$Schema ResponseTextConfig ResponseInputItem ResponseInputItem$Message ResponseInputItem$Message$Role ResponseInputImage ResponseInputImage$Detail ResponseInputText ResponseInputContent ResponseInputFile ResponseCreateParams$Metadata Response$IncompleteDetails$Reason ResponseOutputMessage$Status ResponseStatus ResponseOutputMessage ResponseOutputMessage$Content ResponseOutputText ResponseOutputText$Annotation ResponseOutputText$Annotation$FileCitation ResponseOutputText$Annotation$UrlCitation ResponseOutputText$Annotation$FilePath ResponseOutputRefusal)))
+           (com.openai.models.responses EasyInputMessage EasyInputMessage$Role ResponseCreateParams Response ResponseFormatTextJsonSchemaConfig ResponseFormatTextJsonSchemaConfig$Schema ResponseTextConfig ResponseInputItem ResponseInputItem$Message ResponseInputItem$Message$Role ResponseInputImage ResponseInputImage$Detail ResponseInputText ResponseInputContent ResponseInputFile ResponseCreateParams$Metadata Response$IncompleteDetails$Reason ResponseOutputMessage$Status ResponseStatus ResponseOutputMessage ResponseOutputMessage$Content ResponseOutputText ResponseOutputText$Annotation ResponseOutputText$Annotation$FileCitation ResponseOutputText$Annotation$UrlCitation ResponseOutputText$Annotation$FilePath ResponseOutputRefusal Tool Tool$ImageGeneration Tool$ImageGeneration$Background Tool$ImageGeneration$InputImageMask Tool$ImageGeneration$Model Tool$ImageGeneration$Moderation Tool$ImageGeneration$OutputFormat Tool$ImageGeneration$Quality Tool$ImageGeneration$Size ResponseOutputItem$ImageGenerationCall$Status ResponseStreamEvent ResponseTextDeltaEvent ResponseCreatedEvent ResponseInProgressEvent ResponseOutputItemAddedEvent ResponseContentPartAddedEvent ResponseTextDoneEvent ResponseContentPartDoneEvent ResponseOutputItemDoneEvent ResponseCompletedEvent ResponseImageGenCallInProgressEvent ResponseImageGenCallGeneratingEvent ResponseImageGenCallPartialImageEvent ResponseImageGenCallCompletedEvent)))
 
 (def easy-input-roles
   {:user      EasyInputMessage$Role/USER
@@ -309,11 +309,68 @@
     (.putAllAdditionalProperties builder jsonified)
     (.build builder)))
 
+;;; Tools
+
+(def image-generation-backgrounds
+  {:transparent Tool$ImageGeneration$Background/TRANSPARENT
+   :opaque      Tool$ImageGeneration$Background/OPAQUE
+   :auto        Tool$ImageGeneration$Background/AUTO})
+
+(def image-generation-models
+  {:gpt-image-1 Tool$ImageGeneration$Model/GPT_IMAGE_1})
+
+(def image-generation-moderations
+  {:auto Tool$ImageGeneration$Moderation/AUTO
+   :low  Tool$ImageGeneration$Moderation/LOW})
+
+(def image-generation-output-formats
+  {:png Tool$ImageGeneration$OutputFormat/PNG
+   :webp Tool$ImageGeneration$OutputFormat/WEBP
+   :jpeg Tool$ImageGeneration$OutputFormat/JPEG})
+
+(def image-generation-qualities
+  {:low Tool$ImageGeneration$Quality/LOW
+   :medium Tool$ImageGeneration$Quality/MEDIUM
+   :high Tool$ImageGeneration$Quality/HIGH
+   :auto Tool$ImageGeneration$Quality/AUTO})
+
+(def image-generation-sizes
+  {:1024x1024 Tool$ImageGeneration$Size/_1024X1024
+   :1024x1536 Tool$ImageGeneration$Size/_1024X1536
+   :1536x1024 Tool$ImageGeneration$Size/_1536X1024
+   :auto      Tool$ImageGeneration$Size/AUTO})
+
+(defbuilder input-image-mask
+  (Tool$ImageGeneration$InputImageMask/builder)
+  {:file-id   "fileId"
+   :image-url "imageUrl"})
+
+(defbuilder image-generation-tool
+  (Tool$ImageGeneration/builder)
+  {:background         image-generation-backgrounds
+   :input-image-mask   ["inputImageMask" input-image-mask]
+   :model              image-generation-models
+   :moderation         image-generation-moderations
+   :output-compression "outputCompression"
+   :output-format      image-generation-output-formats
+   :partial-images     "partialImages"
+   :quality            image-generation-qualities
+   :size               image-generation-sizes})
+
+(defn tools [v]
+  (let [tools' (ArrayList.)]
+    (doseq [{:keys [type] :as tool} v]
+      (condp = type
+        :image-generation (.add tools' (Tool/ofImageGeneration (image-generation-tool tool)))
+        (throw (ex-info (str "Unsupported tool type: " type) {:tool tool}))))
+    tools'))
+
 (defbuilder response-create-params
   (ResponseCreateParams/builder)
   {:model ["model" chat-model]
    :input-of-response "inputOfResponse"
    :input "input"
+   :tools ["tools" tools]
    :max-output-tokens "maxOutputTokens"
    :metadata ["metadata" metadata]
    :format ["text" (fn [arg]
@@ -327,7 +384,7 @@
   (let [input-of-response (cond
                             (some? (:easy-input-messages m)) (easy-input-messages (:easy-input-messages m))
                             (some? (:input-items m)) (response-input-items (:input-items m)))]
-    (response-create-params (merge (cond-> {:model :gpt-4o}
+    (response-create-params (merge (cond-> {:model (get m :model :gpt-4o)}
                                      (some? input-of-response) (assoc :input-of-response input-of-response))
                                    (dissoc m :easy-input-messages :input-items)))))
 
@@ -345,6 +402,17 @@
                     {:file-id (.fileId fp)
                      :index   (.index fp)})})
 
+(def image-generation-call-status
+  {ResponseOutputItem$ImageGenerationCall$Status/IN_PROGRESS :in-progress
+   ResponseOutputItem$ImageGenerationCall$Status/COMPLETED :completed
+   ResponseOutputItem$ImageGenerationCall$Status/GENERATING :generating
+   ResponseOutputItem$ImageGenerationCall$Status/FAILED :failed})
+
+(defn output-text->map
+  [^ResponseOutputText ot]
+  {:annotations (mapv annotation->map (.annotations ot))
+   :text        (.text ot)})
+
 (defn output->map
   [o]
   {:message (when-some [msg (optional (.message o))]
@@ -352,11 +420,14 @@
                :content (when-some [content (.content msg)]
                           (mapv (fn [c]
                                   {:output-text (when-some [ot (optional (.outputText c))]
-                                                  {:annotations (mapv annotation->map (.annotations ot))
-                                                   :text        (.text ot)})
+                                                  (output-text->map ot))
                                    :refusal     (when-some [rf (optional (.refusal c))]
                                                   (.refusal rf))}) content))
-               :status (message-status (.status msg))})})
+               :status (message-status (.status msg))})
+   :image-generation-call (when-some [igc (optional (.imageGenerationCall o))]
+                            {:id (.id igc)
+                             :result (optional (.result igc))
+                             :status (optional (image-generation-call-status (.status igc)))})})
 
 (defn response->map
   [r]
@@ -436,6 +507,134 @@
         (cond->
          (not raw?) (response->map)))))
 
+
+;;; Async responses
+
+(defn response-content-part-added-event
+  [^ResponseContentPartAddedEvent e]
+  (let [party (.part e)] ;;; 🎉
+    {:type :content-part-added
+     :content-index (.contentIndex e)
+     :output-index (.outputIndex e)
+     :part {:output-text (when-some [ot (optional (.outputText party))]
+                           (output-text->map ot))
+            :refusal     (when-some [rf (optional (.refusal party))]
+                           (.refusal rf))}}))
+
+(defn response-content-part-done-event
+  [^ResponseContentPartDoneEvent e]
+  (let [party (.part e)]
+    {:type :content-part-done
+     :content-index (.contentIndex e)
+     :item-id (.itemId e)
+     :output-index (.outputIndex e)
+     :part {:output-text (when-some [ot (optional (.outputText party))]
+                           (output-text->map ot))
+            :refusal     (when-some [rf (optional (.refusal party))]
+                           (.refusal rf))}}))
+
+(defn response-completed-event
+  [^ResponseCompletedEvent e]
+  {:type :completed
+   :response (response->map (.response e))
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-created-event
+  [^ResponseCreatedEvent e]
+  {:type :created
+   :sequence-number (.sequenceNumber e)
+   :response (response->map (.response e))})
+
+(defn response-image-generation-call-completed-event
+  [^ResponseImageGenCallCompletedEvent e]
+  {:type :image-generation-call-completed
+   :item-id (.itemId e)
+   :output-index (.outputIndex e)
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-image-generation-call-generating-event
+  [^ResponseImageGenCallGeneratingEvent e]
+  {:type :image-generation-call-generating
+   :item-id (.itemId e)
+   :output-index (.outputIndex e)
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-image-generation-call-in-progress-event
+  [^ResponseImageGenCallInProgressEvent e]
+  {:type :image-generation-call-in-progress
+   :item-id (.itemId e)
+   :output-index (.outputIndex e)
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-image-generation-call-partial-image-event
+  [^ResponseImageGenCallPartialImageEvent e]
+  {:type :image-generation-call-partial-image
+   :item-id (.itemId e)
+   :output-index (.outputIndex e)
+   :partial-image-b64 (.partialImageB64 e)
+   :partial-image-index (.partialImageIndex e)
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-in-progress-event
+  [^ResponseInProgressEvent e]
+  {:type     :in-progress
+   :sequence-number (.sequenceNumber e)
+   :response (response->map (.response e))})
+
+(defn response-output-item-added-event
+  [^ResponseOutputItemAddedEvent e]
+  {:type :output-item-added
+   :item (output->map (.item e))
+   :output-index (.outputIndex e)
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-output-item-done-event
+  [^ResponseOutputItemDoneEvent e]
+  {:type :output-item-done
+   :item (output->map (.item e))
+   :output-index (.outputIndex e)
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-text-delta-event
+  [^ResponseTextDeltaEvent e]
+  {:type            :output-text-delta
+   :context-index   (.contentIndex e)
+   :delta           (.delta e)
+   :item-id         (.itemId e)
+   :output-index    (.outputIndex e)
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-text-done-event
+  [^ResponseTextDoneEvent e]
+  {:type :output-text-done
+   :context-index (.contentIndex e)
+   :item-id (.itemId e)
+   :output-index (.outputIndex e)
+   :sequence-number (.sequenceNumber e)
+   :text (.text e)})
+
+(defn response-stream-event->map
+  [^ResponseStreamEvent e]
+  (try
+    (cond
+      (.isContentPartAdded e) (response-content-part-added-event (.asContentPartAdded e))
+      (.isContentPartDone e) (response-content-part-done-event (.asContentPartDone e))
+      (.isCompleted e) (response-completed-event (.asCompleted e))
+      (.isCreated e) (response-created-event (.asCreated e))
+      (.isImageGenerationCallCompleted e) (response-image-generation-call-completed-event (.asImageGenerationCallCompleted e))
+      (.isImageGenerationCallGenerating e) (response-image-generation-call-generating-event (.asImageGenerationCallGenerating e))
+      (.isImageGenerationCallInProgress e) (response-image-generation-call-in-progress-event (.asImageGenerationCallInProgress e))
+      (.isImageGenerationCallPartialImage e) (response-image-generation-call-partial-image-event (.asImageGenerationCallPartialImage e))
+      (.isInProgress e) (response-in-progress-event (.asInProgress e))
+      (.isOutputItemAdded e) (response-output-item-added-event (.asOutputItemAdded e))
+      (.isOutputItemDone e) (response-output-item-done-event (.asOutputItemDone e))
+      (.isOutputTextDelta e) (response-text-delta-event (.asOutputTextDelta e))
+      (.isOutputTextDone e) (response-text-done-event (.asOutputTextDone e))
+      :else e)
+    (catch Exception ex
+      {:type :error
+       :message (.getMessage ex)})))
+
 (defn create-response-stream
   "Nearly identical to create-response except it uses the async client. The first argument
   is a function that will receive events as they become available. All other options are the same
@@ -444,18 +643,20 @@
   Additional options:
   :on-complete - (optional) - Called when the underlying future completes
   :on-error   - (optional)  - Called with any exceptions generated in the underlying future"
-  [on-event & {:keys [on-complete on-error] :as m}]
+  [on-event & {:keys [on-complete on-error raw?] :as m}]
   (let [client  (http/get-client-async)
         params  (response-create-params' m)
         handler (.createStreaming (.responses client) params)
         _       (.subscribe handler
                             (reify AsyncStreamResponse$Handler
                               (onNext [_ event]
-                                (on-event event))))
+                                (on-event (if raw?
+                                            event
+                                            (response-stream-event->map event))))))
         fut     (.onCompleteFuture handler)]
     (when (fn? on-complete)
       (.thenRun fut ^Runnable on-complete))
     (when on-error
       (.exceptionally fut
-       (reify Function
-         (apply [_ ex] (do (on-error ex) nil)))))))
+                      (reify Function
+                        (apply [_ ex] (do (on-error ex) nil)))))))

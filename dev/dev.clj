@@ -2,7 +2,8 @@
   (:require [clojure.tools.namespace.repl :as repl]
             [clojure.java.io :as io]
             [oai-clj.core :as oai]
-            [cheshire.core :as json]))
+            [cheshire.core :as json])
+  (:import (java.util Base64)))
 
 (defn start []
   (println "oai-clj start"))
@@ -12,6 +13,14 @@
 
 (defn refresh []
   (repl/refresh :after 'dev/start))
+
+(defn write-base64-image-to-file
+  "Used for writing generated images to a file"
+  [base64-str file-path]
+  (let [decoder     (Base64/getDecoder)
+        image-bytes (.decode decoder base64-str)]
+    (with-open [output-stream (io/output-stream file-path)]
+      (.write output-stream image-bytes))))
 
 (comment
   ;;; :easy-input-messages are the OG - string content and :role as one of [:user :assistant :system]
@@ -80,10 +89,10 @@
                        (into x v))
         with-outputs (fn [items response]
                        (reduce #(conj %1 (:message %2)) items (:output response)))]
-    (dotimes [i 4]
-      (->> (swap! *context with-outputs (oai/create-response :input-items @*context))
-           (append [{:role :user :content (format "But why?%s" (reduce str "" (repeat i "?")))}])
-           (reset! *context)))
+    (dotimes [i 4] 1
+             (->> (swap! *context with-outputs (oai/create-response :input-items @*context))
+                  (append [{:role :user :content (format "But why?%s" (reduce str "" (repeat i "?")))}])
+                  (reset! *context)))
     @*context)
 
   ;;; Schemas can be maps as well, useful for meta programming
@@ -128,6 +137,39 @@
 
   ;;; Response as a Clojure map
   (:url (first (:data image-response)))
+
+  ;;; Image generation via the responses API
+  (def response
+    (oai/create-response
+     :input "Show me a picture of a dog wearing a tophat. He is wearing a monocole and sipping tea. I want this in the style of Salvador Dalí."
+     :tools [{:type :image-generation}]))
+
+  ;;; Get image generation tool call result from response
+  (def b64-string (get-in response [:output 0 :image-generation-call :result]))
+
+  #_(write-base64-image-to-file b64-string "resources/dog.png")
+
+  ;;; Streaming image generation is fun and cool
+  (oai/create-response-stream
+   (fn [event]
+     (try
+       (if (map? event)
+         (condp = (:type event)
+           :image-generation-call-partial-image
+           (do (println "writing partial image")
+               (write-base64-image-to-file (:partial-image-b64 event) (format "resources/partial-%d.png" (:partial-image-index event))))
+           :output-item-done (println "output item done")
+           :completed        (println "stream completed")
+           (println event))
+         (println event))
+       (catch Exception e
+         (println "Unexpected error streaming image generatin")
+         (println (.getMessage e)))))
+   :input "Show me a picture of a dog wearing a tophat. He is wearing a monocole and sipping tea. I want this in the style of Salvador Dalí."
+   :tools [{:type :image-generation :partial-images 3}]
+   :on-complete #(println "All done here")
+   :on-error (fn [e]
+               (println (.getMessage e))))
 
   ;;; Raw responses here too
   (def image-response
