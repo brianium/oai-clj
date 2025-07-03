@@ -14,7 +14,7 @@
            (com.openai.core JsonValue)
            (com.openai.core.http AsyncStreamResponse$Handler)
            (com.openai.models ChatModel)
-           (com.openai.models.responses EasyInputMessage EasyInputMessage$Role ResponseCreateParams Response ResponseFormatTextJsonSchemaConfig ResponseFormatTextJsonSchemaConfig$Schema ResponseTextConfig ResponseInputItem ResponseInputItem$Message ResponseInputItem$Message$Role ResponseInputImage ResponseInputImage$Detail ResponseInputText ResponseInputContent ResponseInputFile ResponseCreateParams$Metadata Response$IncompleteDetails$Reason ResponseOutputMessage$Status ResponseStatus ResponseOutputMessage ResponseOutputMessage$Content ResponseOutputText ResponseOutputText$Annotation ResponseOutputText$Annotation$FileCitation ResponseOutputText$Annotation$UrlCitation ResponseOutputText$Annotation$FilePath ResponseOutputRefusal)))
+           (com.openai.models.responses EasyInputMessage EasyInputMessage$Role ResponseCreateParams Response ResponseFormatTextJsonSchemaConfig ResponseFormatTextJsonSchemaConfig$Schema ResponseTextConfig ResponseInputItem ResponseInputItem$Message ResponseInputItem$Message$Role ResponseInputImage ResponseInputImage$Detail ResponseInputText ResponseInputContent ResponseInputFile ResponseCreateParams$Metadata Response$IncompleteDetails$Reason ResponseOutputMessage$Status ResponseStatus ResponseOutputMessage ResponseOutputMessage$Content ResponseOutputText ResponseOutputText$Annotation ResponseOutputText$Annotation$FileCitation ResponseOutputText$Annotation$UrlCitation ResponseOutputText$Annotation$FilePath ResponseOutputRefusal Tool Tool$ImageGeneration Tool$ImageGeneration$Background Tool$ImageGeneration$InputImageMask Tool$ImageGeneration$Model Tool$ImageGeneration$Moderation Tool$ImageGeneration$OutputFormat Tool$ImageGeneration$Quality Tool$ImageGeneration$Size ResponseOutputItem$ImageGenerationCall$Status)))
 
 (def easy-input-roles
   {:user      EasyInputMessage$Role/USER
@@ -309,11 +309,68 @@
     (.putAllAdditionalProperties builder jsonified)
     (.build builder)))
 
+;;; Tools
+
+(def image-generation-backgrounds
+  {:transparent Tool$ImageGeneration$Background/TRANSPARENT
+   :opaque      Tool$ImageGeneration$Background/OPAQUE
+   :auto        Tool$ImageGeneration$Background/AUTO})
+
+(def image-generation-models
+  {:gpt-image-1 Tool$ImageGeneration$Model/GPT_IMAGE_1})
+
+(def image-generation-moderations
+  {:auto Tool$ImageGeneration$Moderation/AUTO
+   :low  Tool$ImageGeneration$Moderation/LOW})
+
+(def image-generation-output-formats
+  {:png Tool$ImageGeneration$OutputFormat/PNG
+   :webp Tool$ImageGeneration$OutputFormat/WEBP
+   :jpeg Tool$ImageGeneration$OutputFormat/JPEG})
+
+(def image-generation-qualities
+  {:low Tool$ImageGeneration$Quality/LOW
+   :medium Tool$ImageGeneration$Quality/MEDIUM
+   :high Tool$ImageGeneration$Quality/HIGH
+   :auto Tool$ImageGeneration$Quality/AUTO})
+
+(def image-generation-sizes
+  {:1024x1024 Tool$ImageGeneration$Size/_1024X1024
+   :1024x1536 Tool$ImageGeneration$Size/_1024X1536
+   :1536x1024 Tool$ImageGeneration$Size/_1536X1024
+   :auto      Tool$ImageGeneration$Size/AUTO})
+
+(defbuilder input-image-mask
+  (Tool$ImageGeneration$InputImageMask/builder)
+  {:file-id   "fileId"
+   :image-url "imageUrl"})
+
+(defbuilder image-generation-tool
+  (Tool$ImageGeneration/builder)
+  {:background         image-generation-backgrounds
+   :input-image-mask   ["inputImageMask" input-image-mask]
+   :model              image-generation-models
+   :moderation         image-generation-moderations
+   :output-compression "outputCompression"
+   :output-format      image-generation-output-formats
+   :partial-images     "partialImages"
+   :quality            image-generation-qualities
+   :size               image-generation-sizes})
+
+(defn tools [v]
+  (let [tools' (ArrayList.)]
+    (doseq [{:keys [type] :as tool} v]
+      (condp = type
+        :image-generation (.add tools' (Tool/ofImageGeneration (image-generation-tool tool)))
+        (throw (ex-info (str "Unsupported tool type: " type) {:tool tool}))))
+    tools'))
+
 (defbuilder response-create-params
   (ResponseCreateParams/builder)
   {:model ["model" chat-model]
    :input-of-response "inputOfResponse"
    :input "input"
+   :tools ["tools" tools]
    :max-output-tokens "maxOutputTokens"
    :metadata ["metadata" metadata]
    :format ["text" (fn [arg]
@@ -327,7 +384,7 @@
   (let [input-of-response (cond
                             (some? (:easy-input-messages m)) (easy-input-messages (:easy-input-messages m))
                             (some? (:input-items m)) (response-input-items (:input-items m)))]
-    (response-create-params (merge (cond-> {:model :gpt-4o}
+    (response-create-params (merge (cond-> {:model (get m :model :gpt-4o)}
                                      (some? input-of-response) (assoc :input-of-response input-of-response))
                                    (dissoc m :easy-input-messages :input-items)))))
 
@@ -345,6 +402,12 @@
                     {:file-id (.fileId fp)
                      :index   (.index fp)})})
 
+(def image-generation-call-status
+  {ResponseOutputItem$ImageGenerationCall$Status/IN_PROGRESS :in-progress
+   ResponseOutputItem$ImageGenerationCall$Status/COMPLETED :completed
+   ResponseOutputItem$ImageGenerationCall$Status/GENERATING :generating
+   ResponseOutputItem$ImageGenerationCall$Status/FAILED :failed})
+
 (defn output->map
   [o]
   {:message (when-some [msg (optional (.message o))]
@@ -356,7 +419,11 @@
                                                    :text        (.text ot)})
                                    :refusal     (when-some [rf (optional (.refusal c))]
                                                   (.refusal rf))}) content))
-               :status (message-status (.status msg))})})
+               :status (message-status (.status msg))})
+   :image-generation-call (when-some [igc (optional (.imageGenerationCall o))]
+                            {:id (.id igc)
+                             :result (optional (.result igc))
+                             :status (optional (image-generation-call-status (.status igc)))})})
 
 (defn response->map
   [r]
