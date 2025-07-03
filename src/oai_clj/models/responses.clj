@@ -14,7 +14,7 @@
            (com.openai.core JsonValue)
            (com.openai.core.http AsyncStreamResponse$Handler)
            (com.openai.models ChatModel)
-           (com.openai.models.responses EasyInputMessage EasyInputMessage$Role ResponseCreateParams Response ResponseFormatTextJsonSchemaConfig ResponseFormatTextJsonSchemaConfig$Schema ResponseTextConfig ResponseInputItem ResponseInputItem$Message ResponseInputItem$Message$Role ResponseInputImage ResponseInputImage$Detail ResponseInputText ResponseInputContent ResponseInputFile ResponseCreateParams$Metadata Response$IncompleteDetails$Reason ResponseOutputMessage$Status ResponseStatus ResponseOutputMessage ResponseOutputMessage$Content ResponseOutputText ResponseOutputText$Annotation ResponseOutputText$Annotation$FileCitation ResponseOutputText$Annotation$UrlCitation ResponseOutputText$Annotation$FilePath ResponseOutputRefusal Tool Tool$ImageGeneration Tool$ImageGeneration$Background Tool$ImageGeneration$InputImageMask Tool$ImageGeneration$Model Tool$ImageGeneration$Moderation Tool$ImageGeneration$OutputFormat Tool$ImageGeneration$Quality Tool$ImageGeneration$Size ResponseOutputItem$ImageGenerationCall$Status ResponseStreamEvent ResponseTextDeltaEvent ResponseCreatedEvent ResponseInProgressEvent ResponseOutputItemAddedEvent ResponseContentPartAddedEvent ResponseTextDoneEvent ResponseContentPartDoneEvent ResponseOutputItemDoneEvent ResponseCompletedEvent)))
+           (com.openai.models.responses EasyInputMessage EasyInputMessage$Role ResponseCreateParams Response ResponseFormatTextJsonSchemaConfig ResponseFormatTextJsonSchemaConfig$Schema ResponseTextConfig ResponseInputItem ResponseInputItem$Message ResponseInputItem$Message$Role ResponseInputImage ResponseInputImage$Detail ResponseInputText ResponseInputContent ResponseInputFile ResponseCreateParams$Metadata Response$IncompleteDetails$Reason ResponseOutputMessage$Status ResponseStatus ResponseOutputMessage ResponseOutputMessage$Content ResponseOutputText ResponseOutputText$Annotation ResponseOutputText$Annotation$FileCitation ResponseOutputText$Annotation$UrlCitation ResponseOutputText$Annotation$FilePath ResponseOutputRefusal Tool Tool$ImageGeneration Tool$ImageGeneration$Background Tool$ImageGeneration$InputImageMask Tool$ImageGeneration$Model Tool$ImageGeneration$Moderation Tool$ImageGeneration$OutputFormat Tool$ImageGeneration$Quality Tool$ImageGeneration$Size ResponseOutputItem$ImageGenerationCall$Status ResponseStreamEvent ResponseTextDeltaEvent ResponseCreatedEvent ResponseInProgressEvent ResponseOutputItemAddedEvent ResponseContentPartAddedEvent ResponseTextDoneEvent ResponseContentPartDoneEvent ResponseOutputItemDoneEvent ResponseCompletedEvent ResponseImageGenCallInProgressEvent ResponseImageGenCallGeneratingEvent ResponseImageGenCallPartialImageEvent ResponseImageGenCallCompletedEvent)))
 
 (def easy-input-roles
   {:user      EasyInputMessage$Role/USER
@@ -545,6 +545,36 @@
    :sequence-number (.sequenceNumber e)
    :response (response->map (.response e))})
 
+(defn response-image-generation-call-completed-event
+  [^ResponseImageGenCallCompletedEvent e]
+  {:type :image-generation-call-completed
+   :item-id (.itemId e)
+   :output-index (.outputIndex e)
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-image-generation-call-generating-event
+  [^ResponseImageGenCallGeneratingEvent e]
+  {:type :image-generation-call-generating
+   :item-id (.itemId e)
+   :output-index (.outputIndex e)
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-image-generation-call-in-progress-event
+  [^ResponseImageGenCallInProgressEvent e]
+  {:type :image-generation-call-in-progress
+   :item-id (.itemId e)
+   :output-index (.outputIndex e)
+   :sequence-number (.sequenceNumber e)})
+
+(defn response-image-generation-call-partial-image-event
+  [^ResponseImageGenCallPartialImageEvent e]
+  {:type :image-generation-call-partial-image
+   :item-id (.itemId e)
+   :output-index (.outputIndex e)
+   :partial-image-b64 (.partialImageB64 e)
+   :partial-image-index (.partialImageIndex e)
+   :sequence-number (.sequenceNumber e)})
+
 (defn response-in-progress-event
   [^ResponseInProgressEvent e]
   {:type     :in-progress
@@ -591,6 +621,10 @@
       (.isContentPartDone e) (response-content-part-done-event (.asContentPartDone e))
       (.isCompleted e) (response-completed-event (.asCompleted e))
       (.isCreated e) (response-created-event (.asCreated e))
+      (.isImageGenerationCallCompleted e) (response-image-generation-call-completed-event (.asImageGenerationCallCompleted e))
+      (.isImageGenerationCallGenerating e) (response-image-generation-call-generating-event (.asImageGenerationCallGenerating e))
+      (.isImageGenerationCallInProgress e) (response-image-generation-call-in-progress-event (.asImageGenerationCallInProgress e))
+      (.isImageGenerationCallPartialImage e) (response-image-generation-call-partial-image-event (.asImageGenerationCallPartialImage e))
       (.isInProgress e) (response-in-progress-event (.asInProgress e))
       (.isOutputItemAdded e) (response-output-item-added-event (.asOutputItemAdded e))
       (.isOutputItemDone e) (response-output-item-done-event (.asOutputItemDone e))
